@@ -28,91 +28,59 @@ jobs:
               timeout: 60000
             });
 
-            // Wait for Angular to finish rendering room cards
             try {
               await page.waitForSelector('.room-card, .room-type, .available-room, [class*=\"room\"]', { timeout: 15000 });
-            } catch(e) {
-              console.error('Selector wait timed out, proceeding anyway');
-            }
+            } catch(e) {}
             await new Promise(r => setTimeout(r, 8000));
 
-            // Try to pull srpData out of the Angular scope / window
-            const result = await page.evaluate(() => {
-              // Try window variables first
-              if (window.__INITIAL_STATE__) return JSON.stringify(window.__INITIAL_STATE__);
-              if (window.srpData) return JSON.stringify(window.srpData);
-
-              // Walk Angular's internal scope to find srpData
-              try {
-                const allElements = document.querySelectorAll('*');
-                for (const el of allElements) {
-                  const scope = window.angular && window.angular.element(el).scope && window.angular.element(el).scope();
-                  if (scope && scope.srpData && scope.srpData.availableRooms) {
-                    return JSON.stringify(scope.srpData);
-                  }
-                }
-              } catch(e) {}
-
-              // Try Vue devtools
-              try {
-                const vueEl = document.querySelector('#app').__vue__;
-                if (vueEl && vueEl.\$data) return JSON.stringify(vueEl.\$data);
-              } catch(e) {}
-
-              // Last resort: scrape room cards from the DOM
-              const rooms = [];
-              document.querySelectorAll('[class*=\"room\"], [class*=\"suite\"], [class*=\"cabin\"]').forEach(el => {
-                const text = el.innerText;
-                if (text && text.length > 10) rooms.push(text.substring(0, 200));
-              });
-              if (rooms.length > 0) return JSON.stringify({ domRooms: rooms });
-
-              return null;
-            });
-
-            console.error('PAGE EVAL RESULT: ' + result);
-
-            // Also dump visible text from the page
-            const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 3000));
-            console.error('BODY TEXT: ' + bodyText);
-
+            const bodyText = await page.evaluate(() => document.body.innerText);
             await browser.close();
 
-            if (!result) {
-              console.log('PARSE_ERROR: Could not extract data from page');
+            // Check if sold out
+            if (bodyText.includes('currently sold out') || bodyText.includes('Soldout')) {
+              console.log('NO - Sold out message detected');
               process.exit(0);
             }
 
-            try {
-              const data = JSON.parse(result);
-
-              // Handle srpData format
-              if (data.availableRooms) {
-                const available = data.availableRooms.filter(r => (r.availability || 0) > 0);
-                if (available.length > 0) {
-                  console.log('YES');
-                  available.forEach(r => {
-                    const name = Buffer.from(r.name || '', 'base64').toString('utf-8');
-                    const avail = r.availability || '?';
-                    const rate = (r.plans && r.plans[0]) ? r.plans[0].adr : 0;
-                    console.log(\`  - \${name}: \${avail} available @ \$\${rate}/night\`);
-                  });
-                } else {
-                  console.log('NO');
+            // Extract room names and prices from body text using Book Now as anchor
+            const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const rooms = [];
+            for (let i = 0; i < lines.length; i++) {
+              // Room names appear just before price lines
+              if (lines[i].match(/^\\\$[\d,]+\\.?\d*$/) && lines[i+1] === 'Avg/Night') {
+                // Walk back to find room name
+                for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
+                  if (lines[j].match(/^(Lodge|Western|Cabin|Suite|King|Queen|Room)/i)) {
+                    rooms.push({ name: lines[j], price: lines[i] });
+                    break;
+                  }
                 }
-              } else if (data.domRooms) {
-                console.error('DOM rooms found: ' + JSON.stringify(data.domRooms));
-                console.log('MANUAL_CHECK_NEEDED');
-              } else {
-                console.log('PARSE_ERROR: Unexpected data format');
               }
-            } catch(e) {
-              console.log('PARSE_ERROR: ' + e.message);
+            }
+
+            // Also check for 'results found' line to confirm availability
+            const resultsMatch = bodyText.match(/(\d+)\s+results?\s+found/i);
+            const resultCount = resultsMatch ? parseInt(resultsMatch[1]) : 0;
+
+            if (resultCount > 0 || rooms.length > 0) {
+              console.log('YES');
+              if (resultCount > 0) console.log(\`  \${resultCount} room type(s) available:\`);
+              if (rooms.length > 0) {
+                rooms.forEach(r => console.log(\`  - \${r.name}: \${r.price}/night\`));
+              } else {
+                // Fallback: just list unique room names from body
+                const roomNames = ['Lodge Room 2 Queen Beds', 'Lodge Room 2 Queen Beds ADA', 'Western Cabin 2 Double Beds', 'Western Cabin 1 Queen Bed', 'Western Cabin One Queen ADA'];
+                roomNames.forEach(name => {
+                  if (bodyText.includes(name)) console.log(\`  - \${name}: available\`);
+                });
+              }
+            } else {
+              console.log('NO');
             }
           })();
           " > /tmp/result.txt 2>/tmp/debug.txt
 
-          echo "=== DEBUG OUTPUT ==="
+          echo "=== DEBUG ==="
           cat /tmp/debug.txt
           echo "=== RESULT ==="
           cat /tmp/result.txt
@@ -144,5 +112,5 @@ jobs:
         run: |
           echo "Rooms available! Failing this step so GitHub emails you."
           echo "$AVAILABILITY_DETAILS"
-          echo "Book NOW: https://zionlodge.ibe.stayntouch.com/"
+          echo "Book NOW: https://zionlodge.ibe.stayntouch.com/search-results?checkin=09-06-2026&checkout=09-07-2026&adults=2"
           exit 1
