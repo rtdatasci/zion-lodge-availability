@@ -13,33 +13,45 @@ jobs:
     steps:
       - name: Check availability for Sep 6-7 2026
         run: |
+          # Fetch the search results page HTML
           RESPONSE=$(curl -s \
-            -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
-            "https://api.ibe.stayntouch.com/hotels/2638/room_types?check_in=2026-09-06&check_out=2026-09-07&adults=2&children=0")
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml" \
+            "https://zionlodge.ibe.stayntouch.com/search-results?checkin=09-06-2026&checkout=09-07-2026&adults=2")
 
-          echo "Raw API response (Sep 6-7):"
-          echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
-
+          # Extract the JSON blob embedded in the page (srpData contains availableRooms)
           AVAILABLE=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
+          import sys, json, re, base64
+
+          html = sys.stdin.read()
+
+          # The page embeds availability JSON in a script tag as srpData
+          match = re.search(r'\"srpData\"\s*:\s*(\{.*?\"minimumPrice\":\d+.*?\"error\":\{\"errors\":\[\]\}\})', html, re.DOTALL)
+          if not match:
+              print('PARSE_ERROR: Could not find srpData in page')
+              sys.exit(0)
+
           try:
-              data = json.load(sys.stdin)
-              rooms = data if isinstance(data, list) else data.get('room_types', [])
-              available = [r for r in rooms if r.get('available', 0) > 0 or r.get('total_available', 0) > 0]
+              data = json.loads(match.group(1))
+              rooms = data.get('availableRooms', [])
+              available = [r for r in rooms if r.get('availability', 0) > 0]
               if available:
                   print('YES')
                   for r in available:
-                      name = r.get('name', r.get('room_type_name', 'Unknown room'))
-                      avail = r.get('available', r.get('total_available', '?'))
-                      print(f'  - {name}: {avail} available')
+                      # Room names are base64 encoded
+                      try:
+                          name = base64.b64decode(r.get('name', '')).decode('utf-8')
+                      except:
+                          name = r.get('name', 'Unknown')
+                      avail = r.get('availability', '?')
+                      rate = r.get('plans', [{}])[0].get('adr', 0)
+                      print(f'  - {name}: {avail} available @ \${rate}/night')
               else:
                   print('NO')
           except Exception as e:
               print(f'PARSE_ERROR: {e}')
           " 2>&1)
 
-          echo ""
           echo "Availability result (Sep 6-7): $AVAILABLE"
 
           if echo "$AVAILABLE" | grep -q "^YES"; then
@@ -56,7 +68,6 @@ jobs:
           if [ "$ROOMS_AVAILABLE" = "true" ]; then
             echo "ROOMS AVAILABLE!"
             echo "$AVAILABILITY_DETAILS"
-            echo ""
             echo "Book here: https://zionlodge.ibe.stayntouch.com/"
           else
             echo "No rooms available for Sep 6-7. Will check again soon."
@@ -64,8 +75,6 @@ jobs:
 
       # ---------------------------------------------------------------
       # Fail intentionally to trigger GitHub email notification.
-      # GitHub emails you when a workflow job fails.
-      # Go to: GitHub profile -> Settings -> Notifications -> Actions
       # ---------------------------------------------------------------
       - name: Fail intentionally to trigger GitHub email notification
         if: env.ROOMS_AVAILABLE == 'true'
