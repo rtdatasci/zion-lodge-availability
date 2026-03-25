@@ -23,52 +23,88 @@ jobs:
             });
             const page = await browser.newPage();
 
-            let availableRooms = null;
-
-            // Intercept ALL responses from api.ibe.stayntouch.com
-            page.on('response', async response => {
-              const url = response.url();
-              if (url.includes('api.ibe.stayntouch.com') && !url.match(/\.(jpg|png|css|js|ico|woff)/)) {
-                try {
-                  const text = await response.text();
-                  console.error('API_URL: ' + url);
-                  console.error('API_RESPONSE: ' + text.substring(0, 500));
-                  if (text.includes('availableRooms')) {
-                    availableRooms = JSON.parse(text);
-                  }
-                } catch(e) {
-                  console.error('API_PARSE_ERR: ' + e.message);
-                }
-              }
-            });
-
             await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=09-06-2026&checkout=09-07-2026&adults=2', {
               waitUntil: 'networkidle0',
               timeout: 60000
             });
 
-            // Wait extra time for lazy API calls
-            await new Promise(r => setTimeout(r, 10000));
+            // Wait for Angular to finish rendering room cards
+            try {
+              await page.waitForSelector('.room-card, .room-type, .available-room, [class*=\"room\"]', { timeout: 15000 });
+            } catch(e) {
+              console.error('Selector wait timed out, proceeding anyway');
+            }
+            await new Promise(r => setTimeout(r, 8000));
+
+            // Try to pull srpData out of the Angular scope / window
+            const result = await page.evaluate(() => {
+              // Try window variables first
+              if (window.__INITIAL_STATE__) return JSON.stringify(window.__INITIAL_STATE__);
+              if (window.srpData) return JSON.stringify(window.srpData);
+
+              // Walk Angular's internal scope to find srpData
+              try {
+                const allElements = document.querySelectorAll('*');
+                for (const el of allElements) {
+                  const scope = window.angular && window.angular.element(el).scope && window.angular.element(el).scope();
+                  if (scope && scope.srpData && scope.srpData.availableRooms) {
+                    return JSON.stringify(scope.srpData);
+                  }
+                }
+              } catch(e) {}
+
+              // Try Vue devtools
+              try {
+                const vueEl = document.querySelector('#app').__vue__;
+                if (vueEl && vueEl.\$data) return JSON.stringify(vueEl.\$data);
+              } catch(e) {}
+
+              // Last resort: scrape room cards from the DOM
+              const rooms = [];
+              document.querySelectorAll('[class*=\"room\"], [class*=\"suite\"], [class*=\"cabin\"]').forEach(el => {
+                const text = el.innerText;
+                if (text && text.length > 10) rooms.push(text.substring(0, 200));
+              });
+              if (rooms.length > 0) return JSON.stringify({ domRooms: rooms });
+
+              return null;
+            });
+
+            console.error('PAGE EVAL RESULT: ' + result);
+
+            // Also dump visible text from the page
+            const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 3000));
+            console.error('BODY TEXT: ' + bodyText);
+
             await browser.close();
 
-            if (!availableRooms) {
-              console.log('PARSE_ERROR: No availableRooms data found in any API response');
+            if (!result) {
+              console.log('PARSE_ERROR: Could not extract data from page');
               process.exit(0);
             }
 
             try {
-              const rooms = availableRooms.availableRooms || availableRooms;
-              const available = (Array.isArray(rooms) ? rooms : []).filter(r => (r.availability || 0) > 0);
-              if (available.length > 0) {
-                console.log('YES');
-                available.forEach(r => {
-                  const name = Buffer.from(r.name || '', 'base64').toString('utf-8');
-                  const avail = r.availability || '?';
-                  const rate = (r.plans && r.plans[0]) ? r.plans[0].adr : 0;
-                  console.log(\`  - \${name}: \${avail} available @ \$\${rate}/night\`);
-                });
+              const data = JSON.parse(result);
+
+              // Handle srpData format
+              if (data.availableRooms) {
+                const available = data.availableRooms.filter(r => (r.availability || 0) > 0);
+                if (available.length > 0) {
+                  console.log('YES');
+                  available.forEach(r => {
+                    const name = Buffer.from(r.name || '', 'base64').toString('utf-8');
+                    const avail = r.availability || '?';
+                    const rate = (r.plans && r.plans[0]) ? r.plans[0].adr : 0;
+                    console.log(\`  - \${name}: \${avail} available @ \$\${rate}/night\`);
+                  });
+                } else {
+                  console.log('NO');
+                }
+              } else if (data.domRooms) {
+                console.error('DOM rooms found: ' + JSON.stringify(data.domRooms));
+                console.log('MANUAL_CHECK_NEEDED');
               } else {
-                console.log('NO');
+                console.log('PARSE_ERROR: Unexpected data format');
               }
             } catch(e) {
               console.log('PARSE_ERROR: ' + e.message);
