@@ -2,55 +2,84 @@ name: Zion Lodge Availability Checker - Sep 6-7
 
 on:
   schedule:
-    # Runs every 15 minutes
     - cron: '*/15 * * * *'
-  workflow_dispatch: # lets you also trigger it manually from GitHub UI
+  workflow_dispatch:
 
 jobs:
   check-availability:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install Puppeteer
+        run: |
+          npm install puppeteer
+
       - name: Check availability for Sep 6-7 2026
         run: |
-          # Fetch the search results page HTML
-          RESPONSE=$(curl -s \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" \
-            -H "Accept: text/html,application/xhtml+xml" \
-            "https://zionlodge.ibe.stayntouch.com/search-results?checkin=09-06-2026&checkout=09-07-2026&adults=2")
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
 
-          # Extract the JSON blob embedded in the page (srpData contains availableRooms)
-          AVAILABLE=$(echo "$RESPONSE" | python3 -c "
-          import sys, json, re, base64
+            let srpData = null;
 
-          html = sys.stdin.read()
+            // Intercept console.error which is where srpData gets logged
+            page.on('console', msg => {
+              const text = msg.text();
+              if (text.includes('srpData')) {
+                try {
+                  const match = text.match(/srpData[\"']?\s*:\s*(\{.*)/s);
+                  if (match) srpData = JSON.parse(match[1]);
+                } catch(e) {}
+              }
+            });
 
-          # The page embeds availability JSON in a script tag as srpData
-          match = re.search(r'\"srpData\"\s*:\s*(\{.*?\"minimumPrice\":\d+.*?\"error\":\{\"errors\":\[\]\}\})', html, re.DOTALL)
-          if not match:
-              print('PARSE_ERROR: Could not find srpData in page')
-              sys.exit(0)
+            // Intercept the page's window object after load to grab srpData
+            await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=09-06-2026&checkout=09-07-2026&adults=2', {
+              waitUntil: 'networkidle2',
+              timeout: 60000
+            });
 
-          try:
-              data = json.loads(match.group(1))
-              rooms = data.get('availableRooms', [])
-              available = [r for r in rooms if r.get('availability', 0) > 0]
-              if available:
-                  print('YES')
-                  for r in available:
-                      # Room names are base64 encoded
-                      try:
-                          name = base64.b64decode(r.get('name', '')).decode('utf-8')
-                      except:
-                          name = r.get('name', 'Unknown')
-                      avail = r.get('availability', '?')
-                      rate = r.get('plans', [{}])[0].get('adr', 0)
-                      print(f'  - {name}: {avail} available @ \${rate}/night')
-              else:
-                  print('NO')
-          except Exception as e:
-              print(f'PARSE_ERROR: {e}')
-          " 2>&1)
+            // Wait a bit for Angular to render
+            await new Promise(r => setTimeout(r, 5000));
+
+            // Extract srpData from the page's rendered HTML
+            const content = await page.content();
+            await browser.close();
+
+            // Parse srpData from rendered HTML
+            const match = content.match(/\"srpData\"\s*:\s*(\{[\s\S]*?\"minimumPrice\":\d+[\s\S]*?\"error\":\{\"errors\":\[\]\}\})/);
+            if (!match) {
+              console.log('PARSE_ERROR: srpData not found in rendered page');
+              process.exit(0);
+            }
+
+            try {
+              const data = JSON.parse(match[1]);
+              const rooms = data.availableRooms || [];
+              const available = rooms.filter(r => (r.availability || 0) > 0);
+              if (available.length > 0) {
+                console.log('YES');
+                available.forEach(r => {
+                  const name = Buffer.from(r.name || '', 'base64').toString('utf-8');
+                  const avail = r.availability || '?';
+                  const rate = (r.plans && r.plans[0]) ? r.plans[0].adr : 0;
+                  console.log(\`  - \${name}: \${avail} available @ \$\${rate}/night\`);
+                });
+              } else {
+                console.log('NO');
+              }
+            } catch(e) {
+              console.log('PARSE_ERROR: ' + e.message);
+            }
+          })();
+          " > /tmp/result.txt 2>&1
+
+          cat /tmp/result.txt
+          AVAILABLE=$(cat /tmp/result.txt)
 
           echo "Availability result (Sep 6-7): $AVAILABLE"
 
@@ -73,9 +102,6 @@ jobs:
             echo "No rooms available for Sep 6-7. Will check again soon."
           fi
 
-      # ---------------------------------------------------------------
-      # Fail intentionally to trigger GitHub email notification.
-      # ---------------------------------------------------------------
       - name: Fail intentionally to trigger GitHub email notification
         if: env.ROOMS_AVAILABLE == 'true'
         run: |
