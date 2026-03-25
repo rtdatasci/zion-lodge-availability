@@ -11,22 +11,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check Zion Lodge availability for Apr 6–7 2026
+      - name: Check availability for Apr 4-5 2026
         run: |
           RESPONSE=$(curl -s \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
-            "https://api.ibe.stayntouch.com/hotels/2638/room_types?check_in=2026-04-06&check_out=2026-04-07&adults=2&children=0")
+            "https://api.ibe.stayntouch.com/hotels/2638/room_types?check_in=2026-04-04&check_out=2026-04-05&adults=2&children=0")
 
-          echo "Raw API response:"
+          echo "Raw API response (Apr 4-5):"
           echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
 
-          # Check if any rooms are available (not sold out)
           AVAILABLE=$(echo "$RESPONSE" | python3 -c "
           import sys, json
           try:
               data = json.load(sys.stdin)
-              # StayNTouch IBE returns a list of room types; filter those with availability
               rooms = data if isinstance(data, list) else data.get('room_types', [])
               available = [r for r in rooms if r.get('available', 0) > 0 or r.get('total_available', 0) > 0]
               if available:
@@ -39,40 +37,79 @@ jobs:
                   print('NO')
           except Exception as e:
               print(f'PARSE_ERROR: {e}')
-              print('Full response may need inspection — see above.')
           " 2>&1)
 
           echo ""
-          echo "Availability result: $AVAILABLE"
+          echo "Availability result (Apr 4-5): $AVAILABLE"
 
           if echo "$AVAILABLE" | grep -q "^YES"; then
             echo "ROOMS_AVAILABLE=true" >> $GITHUB_ENV
             echo "AVAILABILITY_DETAILS<<EOF" >> $GITHUB_ENV
-            echo "$AVAILABLE" >> $GITHUB_ENV
+            echo "Apr 4-5: $AVAILABLE" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "ROOMS_AVAILABLE=false" >> $GITHUB_ENV
           fi
 
+      - name: Check availability for Apr 6-7 2026
+        run: |
+          RESPONSE=$(curl -s \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            "https://api.ibe.stayntouch.com/hotels/2638/room_types?check_in=2026-04-06&check_out=2026-04-07&adults=2&children=0")
+
+          echo "Raw API response (Apr 6-7):"
+          echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
+
+          AVAILABLE=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              rooms = data if isinstance(data, list) else data.get('room_types', [])
+              available = [r for r in rooms if r.get('available', 0) > 0 or r.get('total_available', 0) > 0]
+              if available:
+                  print('YES')
+                  for r in available:
+                      name = r.get('name', r.get('room_type_name', 'Unknown room'))
+                      avail = r.get('available', r.get('total_available', '?'))
+                      print(f'  - {name}: {avail} available')
+              else:
+                  print('NO')
+          except Exception as e:
+              print(f'PARSE_ERROR: {e}')
+          " 2>&1)
+
+          echo ""
+          echo "Availability result (Apr 6-7): $AVAILABLE"
+
+          if echo "$AVAILABLE" | grep -q "^YES"; then
+            echo "ROOMS_AVAILABLE=true" >> $GITHUB_ENV
+            echo "APR67_DETAILS<<EOF" >> $GITHUB_ENV
+            echo "Apr 6-7: $AVAILABLE" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
+
       - name: Log result
         run: |
+          ALL_DETAILS="${AVAILABILITY_DETAILS}${APR67_DETAILS}"
           if [ "$ROOMS_AVAILABLE" = "true" ]; then
-            echo "✅ ROOMS AVAILABLE for Apr 6–7 2026!"
-            echo "$AVAILABILITY_DETAILS"
+            echo "ROOMS AVAILABLE!"
+            echo "$ALL_DETAILS"
             echo ""
             echo "Book here: https://zionlodge.ibe.stayntouch.com/"
           else
-            echo "❌ No rooms available yet for Apr 6–7 2026. Will check again next hour."
+            echo "No rooms available for Apr 4-5 or Apr 6-7. Will check again soon."
           fi
 
       # ---------------------------------------------------------------
-      # OPTIONAL: Fail the job when rooms ARE available.
-      # GitHub can email you on job failure — enable this to get notified.
-      # Go to: GitHub profile → Settings → Notifications → Actions
+      # Fail intentionally to trigger GitHub email notification.
+      # GitHub emails you when a workflow job fails.
+      # Go to: GitHub profile -> Settings -> Notifications -> Actions
       # ---------------------------------------------------------------
       - name: Fail intentionally to trigger GitHub email notification
         if: env.ROOMS_AVAILABLE == 'true'
         run: |
-          echo "🚨 Rooms available! Failing this step so GitHub emails you."
+          echo "Rooms available! Failing this step so GitHub emails you."
+          echo "${AVAILABILITY_DETAILS}${APR67_DETAILS}"
           echo "Book NOW: https://zionlodge.ibe.stayntouch.com/"
           exit 1
