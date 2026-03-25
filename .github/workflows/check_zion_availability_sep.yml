@@ -23,53 +23,42 @@ jobs:
             });
             const page = await browser.newPage();
 
-            // Capture any availability data from XHR/fetch responses
-            let foundData = null;
+            let availableRooms = null;
+
+            // Intercept ALL responses from api.ibe.stayntouch.com
             page.on('response', async response => {
               const url = response.url();
-              if (url.includes('stayntouch') && !url.includes('.jpg') && !url.includes('.png') && !url.includes('.css') && !url.includes('.js')) {
+              if (url.includes('api.ibe.stayntouch.com') && !url.match(/\.(jpg|png|css|js|ico|woff)/)) {
                 try {
                   const text = await response.text();
-                  if (text.includes('availableRooms') || text.includes('availability')) {
-                    console.error('FOUND_API_URL: ' + url);
-                    console.error('FOUND_API_RESPONSE: ' + text.substring(0, 2000));
-                    foundData = text;
+                  console.error('API_URL: ' + url);
+                  console.error('API_RESPONSE: ' + text.substring(0, 500));
+                  if (text.includes('availableRooms')) {
+                    availableRooms = JSON.parse(text);
                   }
-                } catch(e) {}
+                } catch(e) {
+                  console.error('API_PARSE_ERR: ' + e.message);
+                }
               }
             });
 
             await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=09-06-2026&checkout=09-07-2026&adults=2', {
-              waitUntil: 'networkidle2',
+              waitUntil: 'networkidle0',
               timeout: 60000
             });
-            await new Promise(r => setTimeout(r, 8000));
 
-            const content = await page.content();
+            // Wait extra time for lazy API calls
+            await new Promise(r => setTimeout(r, 10000));
             await browser.close();
 
-            // Debug: print first 3000 chars of rendered HTML
-            console.error('--- PAGE HTML SAMPLE ---');
-            console.error(content.substring(0, 3000));
-            console.error('--- END SAMPLE ---');
-
-            // Try to find srpData with a looser pattern
-            const match = content.match(/srpData[\"']?\s*:\s*(\{[\s\S]{100,})/);
-            if (!match) {
-              console.log('PARSE_ERROR: srpData not found - see debug output above');
+            if (!availableRooms) {
+              console.log('PARSE_ERROR: No availableRooms data found in any API response');
               process.exit(0);
             }
 
-            // Try to extract just the availableRooms array
             try {
-              const chunk = match[1];
-              const roomsMatch = chunk.match(/\"availableRooms\"\s*:\s*(\[[\s\S]*?\])\s*,\s*\"minimumPrice\"/);
-              if (!roomsMatch) {
-                console.log('PARSE_ERROR: availableRooms array not found');
-                process.exit(0);
-              }
-              const rooms = JSON.parse(roomsMatch[1]);
-              const available = rooms.filter(r => (r.availability || 0) > 0);
+              const rooms = availableRooms.availableRooms || availableRooms;
+              const available = (Array.isArray(rooms) ? rooms : []).filter(r => (r.availability || 0) > 0);
               if (available.length > 0) {
                 console.log('YES');
                 available.forEach(r => {
