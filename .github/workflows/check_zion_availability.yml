@@ -13,7 +13,7 @@ jobs:
       - name: Install Puppeteer
         run: npm install puppeteer
 
-      - name: Check availability for Apr 4-5 2026
+      - name: Check availability for Apr 5-6 2026
         run: |
           node -e "
           const puppeteer = require('puppeteer');
@@ -23,7 +23,7 @@ jobs:
             });
             const page = await browser.newPage();
 
-            await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=04-04-2026&checkout=04-05-2026&adults=2', {
+            await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=04-05-2026&checkout=04-06-2026&adults=2', {
               waitUntil: 'networkidle0',
               timeout: 60000
             });
@@ -55,16 +55,16 @@ jobs:
               console.log('NO');
             }
           })();
-          " > /tmp/result_apr45.txt 2>&1
+          " > /tmp/result_apr56.txt 2>&1
 
-          cat /tmp/result_apr45.txt
-          AVAILABLE=$(cat /tmp/result_apr45.txt)
-          echo "Availability result (Apr 4-5): $AVAILABLE"
+          cat /tmp/result_apr56.txt
+          AVAILABLE=$(cat /tmp/result_apr56.txt)
+          echo "Availability result (Apr 5-6): $AVAILABLE"
 
           if echo "$AVAILABLE" | grep -q "^YES"; then
             echo "ROOMS_AVAILABLE=true" >> $GITHUB_ENV
             echo "AVAILABILITY_DETAILS<<EOF" >> $GITHUB_ENV
-            echo "Apr 4-5: $AVAILABLE" >> $GITHUB_ENV
+            echo "Apr 5-6: $AVAILABLE" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "ROOMS_AVAILABLE=false" >> $GITHUB_ENV
@@ -133,7 +133,7 @@ jobs:
             echo "$ALL_DETAILS"
             echo "Book here: https://zionlodge.ibe.stayntouch.com/"
           else
-            echo "No rooms available for Apr 4-5 or Apr 6-7. Will check again soon."
+            echo "No rooms available for Apr 5-6 or Apr 6-7. Will check again soon."
           fi
 
       - name: Fail intentionally to trigger GitHub email notification
