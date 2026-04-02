@@ -1,0 +1,142 @@
+name: Zion Lodge Availability Checker specific rooms only
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check-availability:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Puppeteer
+        run: npm install puppeteer
+
+      - name: Check availability for Apr 5-6 2026 (Queen rooms only)
+        run: |
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+
+            await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=04-05-2026&checkout=04-06-2026&adults=2', {
+              waitUntil: 'networkidle0',
+              timeout: 60000
+            });
+
+            try {
+              await page.waitForSelector('.room-card, .room-type, .available-room, [class*=\"room\"]', { timeout: 15000 });
+            } catch(e) {}
+            await new Promise(r => setTimeout(r, 8000));
+
+            const bodyText = await page.evaluate(() => document.body.innerText);
+            await browser.close();
+
+            if (bodyText.includes('currently sold out') || bodyText.includes('Soldout')) {
+              console.log('NO - Sold out');
+              process.exit(0);
+            }
+
+            // Only alert for Queen rooms on Apr 5-6
+            // Find all lines mentioning Queen but not Cabin
+            const lines = bodyText.split('\n').map(l => l.trim());
+            const foundQueens = lines.filter(l => /queen/i.test(l) && !/cabin/i.test(l) && l.length > 3 && l.length < 80);
+
+            if (foundQueens.length > 0) {
+              console.log('YES');
+              foundQueens.forEach(name => console.log(\`  - \${name}\`));
+            } else {
+              console.log('NO - No Queen rooms available');
+            }
+          })();
+          " > /tmp/result_apr56.txt 2>&1
+
+          cat /tmp/result_apr56.txt
+          AVAILABLE=$(cat /tmp/result_apr56.txt)
+          echo "Availability result (Apr 5-6 Queens): $AVAILABLE"
+
+          if echo "$AVAILABLE" | grep -q "^YES"; then
+            echo "APR56_QUEEN=true" >> $GITHUB_ENV
+            echo "AVAILABILITY_DETAILS<<EOF" >> $GITHUB_ENV
+            echo "Apr 5-6 (Queen): $AVAILABLE" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "APR56_QUEEN=false" >> $GITHUB_ENV
+          fi
+
+      - name: Check availability for Apr 6-7 2026 (King rooms only)
+        run: |
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+
+            await page.goto('https://zionlodge.ibe.stayntouch.com/search-results?checkin=04-06-2026&checkout=04-07-2026&adults=2', {
+              waitUntil: 'networkidle0',
+              timeout: 60000
+            });
+
+            try {
+              await page.waitForSelector('.room-card, .room-type, .available-room, [class*=\"room\"]', { timeout: 15000 });
+            } catch(e) {}
+            await new Promise(r => setTimeout(r, 8000));
+
+            const bodyText = await page.evaluate(() => document.body.innerText);
+            await browser.close();
+
+            if (bodyText.includes('currently sold out') || bodyText.includes('Soldout')) {
+              console.log('NO - Sold out');
+              process.exit(0);
+            }
+
+            // Only alert for King rooms on Apr 6-7
+            // Find all lines mentioning King but not Cabin
+            const lines = bodyText.split('\n').map(l => l.trim());
+            const foundKings = lines.filter(l => /king/i.test(l) && !/cabin/i.test(l) && l.length > 3 && l.length < 80);
+
+            if (foundKings.length > 0) {
+              console.log('YES');
+              foundKings.forEach(name => console.log(\`  - \${name}\`));
+            } else {
+              console.log('NO - No King rooms available');
+            }
+          })();
+          " > /tmp/result_apr67.txt 2>&1
+
+          cat /tmp/result_apr67.txt
+          AVAILABLE=$(cat /tmp/result_apr67.txt)
+          echo "Availability result (Apr 6-7 Kings): $AVAILABLE"
+
+          if echo "$AVAILABLE" | grep -q "^YES"; then
+            echo "APR67_KING=true" >> $GITHUB_ENV
+            echo "APR67_DETAILS<<EOF" >> $GITHUB_ENV
+            echo "Apr 6-7 (King): $AVAILABLE" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "APR67_KING=false" >> $GITHUB_ENV
+          fi
+
+      - name: Log result
+        run: |
+          if [ "$APR56_QUEEN" = "true" ] || [ "$APR67_KING" = "true" ]; then
+            echo "TARGET ROOMS AVAILABLE!"
+            echo "${AVAILABILITY_DETAILS}${APR67_DETAILS}"
+            echo "Book here: https://zionlodge.ibe.stayntouch.com/"
+          else
+            echo "No target rooms available (Apr 5-6 Queen / Apr 6-7 King). Will check again soon."
+          fi
+
+      - name: Fail intentionally to trigger GitHub email notification
+        if: env.APR56_QUEEN == 'true' || env.APR67_KING == 'true'
+        run: |
+          echo "Target rooms available! Failing this step so GitHub emails you."
+          echo "${AVAILABILITY_DETAILS}${APR67_DETAILS}"
+          echo "Book NOW: https://zionlodge.ibe.stayntouch.com/"
+          exit 1
