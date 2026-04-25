@@ -1,0 +1,49 @@
+name: Cedar Grove Lodge - Aug 5 Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-availability:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Puppeteer
+        run: npm install puppeteer
+
+      - name: Check Cedar Grove Lodge - Aug 5-6 2026
+        run: |
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+            const page = await browser.newPage();
+            await page.goto('https://be.synxis.com/?adult=1&arrive=2026-08-05&chain=398&child=0&currency=USD&depart=2026-08-06&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
+              waitUntil: 'networkidle0', timeout: 60000
+            });
+            try { await page.waitForSelector('[class*=\"room\"], [class*=\"rate\"], [class*=\"avail\"]', { timeout: 15000 }); } catch(e) {}
+            await new Promise(r => setTimeout(r, 8000));
+            const bodyText = await page.evaluate(() => document.body.innerText);
+            await browser.close();
+
+            console.error('=== BODY TEXT ===');
+            console.error(bodyText.substring(0, 3000));
+            console.error('=== END BODY TEXT ===');
+
+            if (/no rooms available|sold out|no availability|no results/i.test(bodyText)) {
+              console.log('NO - Sold out or no availability');
+            } else if (/book now|select|per night|avg\/night|\$\d+/i.test(bodyText)) {
+              console.log('YES');
+              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
+              const roomLines = lines.filter(l => /room|suite|cabin|king|queen|double|standard|deluxe/i.test(l));
+              roomLines.slice(0, 10).forEach(l => console.log('  - ' + l));
+            } else {
+              console.log('UNKNOWN - Could not determine availability, check debug output');
+            }
+          })();
+          " > /tmp/result.txt 2>/tmp/debug.txt
+
+          echo "=== DEBUG OUTPUT ==="
+          cat /tmp/debug.txt
+          echo "=== RESULT ==="
+          cat /tmp/result.txt
