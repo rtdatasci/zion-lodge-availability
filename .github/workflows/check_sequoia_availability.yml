@@ -18,36 +18,44 @@ jobs:
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
-            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+            const browser = await puppeteer.launch({
+              headless: 'new',
+              args: ['--no-sandbox','--disable-setuid-sandbox','--disable-blink-features=AutomationControlled','--window-size=1920,1080']
+            });
             const page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+              window.chrome = { runtime: {} };
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            });
             await page.goto('https://be.synxis.com/?adult=1&arrive=2026-05-22&chain=398&child=0&currency=USD&depart=2026-05-23&dest=SEKI&hotel=59989&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
               waitUntil: 'networkidle0', timeout: 60000
             });
-            try { await page.waitForSelector('[class*=\"room\"], [class*=\"rate\"], [class*=\"avail\"]', { timeout: 15000 }); } catch(e) {}
-            await new Promise(r => setTimeout(r, 8000));
+            await new Promise(r => setTimeout(r, 12000));
             const bodyText = await page.evaluate(() => document.body.innerText);
             await browser.close();
-            console.error('BODY:' + bodyText.substring(0, 3000));
             if (/no rooms available|sold out|no availability|no results/i.test(bodyText)) {
               console.log('NO');
-            } else if (/book now|select|per night|avg\/night|\$\d+/i.test(bodyText)) {
+            } else if (/book now|\$\d+/i.test(bodyText)) {
               console.log('YES');
-              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
-              const roomLines = lines.filter(l => /room|suite|cabin|king|queen|double|standard|deluxe/i.test(l));
-              roomLines.slice(0, 10).forEach(l => console.log('  - ' + l));
-            } else {
-              console.log('UNKNOWN');
-            }
+              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5 && l.length < 80);
+              const roomLines = lines.filter(l => /queen|king|double|standard|deluxe|suite|cabin/i.test(l) && !/nav|menu|cart|sign/i.test(l));
+              roomLines.slice(0, 5).forEach(l => console.log('  - ' + l));
+            } else { console.log('NO'); }
           })();
-          " > /tmp/jml_may2223.txt 2>/tmp/jml_may2223_debug.txt
-          echo "=== DEBUG ===" && cat /tmp/jml_may2223_debug.txt
-          echo "=== RESULT ===" && cat /tmp/jml_may2223.txt
-          RESULT=$(cat /tmp/jml_may2223.txt)
+          " > /tmp/jml_2223.txt 2>&1
+          cat /tmp/jml_2223.txt
+          RESULT=$(grep -m1 "^YES\|^NO" /tmp/jml_2223.txt)
           echo "John Muir May 22-23: $RESULT"
-          if echo "$RESULT" | grep -q "^YES"; then
+          if [ "$RESULT" = "YES" ]; then
             echo "JML_2223=true" >> $GITHUB_ENV
             echo "DETAILS_JML_2223<<EOF" >> $GITHUB_ENV
-            echo "John Muir Lodge May 22-23: $RESULT" >> $GITHUB_ENV
+            echo "John Muir Lodge May 22-23:" >> $GITHUB_ENV
+            cat /tmp/jml_2223.txt >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "JML_2223=false" >> $GITHUB_ENV
@@ -58,36 +66,44 @@ jobs:
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
-            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+            const browser = await puppeteer.launch({
+              headless: 'new',
+              args: ['--no-sandbox','--disable-setuid-sandbox','--disable-blink-features=AutomationControlled','--window-size=1920,1080']
+            });
             const page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+              window.chrome = { runtime: {} };
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            });
             await page.goto('https://be.synxis.com/?adult=1&arrive=2026-05-23&chain=398&child=0&currency=USD&depart=2026-05-24&dest=SEKI&hotel=59989&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
               waitUntil: 'networkidle0', timeout: 60000
             });
-            try { await page.waitForSelector('[class*=\"room\"], [class*=\"rate\"], [class*=\"avail\"]', { timeout: 15000 }); } catch(e) {}
-            await new Promise(r => setTimeout(r, 8000));
+            await new Promise(r => setTimeout(r, 12000));
             const bodyText = await page.evaluate(() => document.body.innerText);
             await browser.close();
-            console.error('BODY:' + bodyText.substring(0, 3000));
             if (/no rooms available|sold out|no availability|no results/i.test(bodyText)) {
               console.log('NO');
-            } else if (/book now|select|per night|avg\/night|\$\d+/i.test(bodyText)) {
+            } else if (/book now|\$\d+/i.test(bodyText)) {
               console.log('YES');
-              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
-              const roomLines = lines.filter(l => /room|suite|cabin|king|queen|double|standard|deluxe/i.test(l));
-              roomLines.slice(0, 10).forEach(l => console.log('  - ' + l));
-            } else {
-              console.log('UNKNOWN');
-            }
+              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5 && l.length < 80);
+              const roomLines = lines.filter(l => /queen|king|double|standard|deluxe|suite|cabin/i.test(l) && !/nav|menu|cart|sign/i.test(l));
+              roomLines.slice(0, 5).forEach(l => console.log('  - ' + l));
+            } else { console.log('NO'); }
           })();
-          " > /tmp/jml_may2324.txt 2>/tmp/jml_may2324_debug.txt
-          echo "=== DEBUG ===" && cat /tmp/jml_may2324_debug.txt
-          echo "=== RESULT ===" && cat /tmp/jml_may2324.txt
-          RESULT=$(cat /tmp/jml_may2324.txt)
+          " > /tmp/jml_2324.txt 2>&1
+          cat /tmp/jml_2324.txt
+          RESULT=$(grep -m1 "^YES\|^NO" /tmp/jml_2324.txt)
           echo "John Muir May 23-24: $RESULT"
-          if echo "$RESULT" | grep -q "^YES"; then
+          if [ "$RESULT" = "YES" ]; then
             echo "JML_2324=true" >> $GITHUB_ENV
             echo "DETAILS_JML_2324<<EOF" >> $GITHUB_ENV
-            echo "John Muir Lodge May 23-24: $RESULT" >> $GITHUB_ENV
+            echo "John Muir Lodge May 23-24:" >> $GITHUB_ENV
+            cat /tmp/jml_2324.txt >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "JML_2324=false" >> $GITHUB_ENV
@@ -98,36 +114,44 @@ jobs:
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
-            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+            const browser = await puppeteer.launch({
+              headless: 'new',
+              args: ['--no-sandbox','--disable-setuid-sandbox','--disable-blink-features=AutomationControlled','--window-size=1920,1080']
+            });
             const page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+              window.chrome = { runtime: {} };
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            });
             await page.goto('https://be.synxis.com/?adult=1&arrive=2026-05-22&chain=398&child=0&currency=USD&depart=2026-05-23&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
               waitUntil: 'networkidle0', timeout: 60000
             });
-            try { await page.waitForSelector('[class*=\"room\"], [class*=\"rate\"], [class*=\"avail\"]', { timeout: 15000 }); } catch(e) {}
-            await new Promise(r => setTimeout(r, 8000));
+            await new Promise(r => setTimeout(r, 12000));
             const bodyText = await page.evaluate(() => document.body.innerText);
             await browser.close();
-            console.error('BODY:' + bodyText.substring(0, 3000));
             if (/no rooms available|sold out|no availability|no results/i.test(bodyText)) {
               console.log('NO');
-            } else if (/book now|select|per night|avg\/night|\$\d+/i.test(bodyText)) {
+            } else if (/book now|\$\d+/i.test(bodyText)) {
               console.log('YES');
-              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
-              const roomLines = lines.filter(l => /room|suite|cabin|king|queen|double|standard|deluxe/i.test(l));
-              roomLines.slice(0, 10).forEach(l => console.log('  - ' + l));
-            } else {
-              console.log('UNKNOWN');
-            }
+              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5 && l.length < 80);
+              const roomLines = lines.filter(l => /queen|king|double|standard|deluxe|suite|cabin/i.test(l) && !/nav|menu|cart|sign/i.test(l));
+              roomLines.slice(0, 5).forEach(l => console.log('  - ' + l));
+            } else { console.log('NO'); }
           })();
-          " > /tmp/cgl_may2223.txt 2>/tmp/cgl_may2223_debug.txt
-          echo "=== DEBUG ===" && cat /tmp/cgl_may2223_debug.txt
-          echo "=== RESULT ===" && cat /tmp/cgl_may2223.txt
-          RESULT=$(cat /tmp/cgl_may2223.txt)
+          " > /tmp/cgl_2223.txt 2>&1
+          cat /tmp/cgl_2223.txt
+          RESULT=$(grep -m1 "^YES\|^NO" /tmp/cgl_2223.txt)
           echo "Cedar Grove May 22-23: $RESULT"
-          if echo "$RESULT" | grep -q "^YES"; then
+          if [ "$RESULT" = "YES" ]; then
             echo "CGL_2223=true" >> $GITHUB_ENV
             echo "DETAILS_CGL_2223<<EOF" >> $GITHUB_ENV
-            echo "Cedar Grove Lodge May 22-23: $RESULT" >> $GITHUB_ENV
+            echo "Cedar Grove Lodge May 22-23:" >> $GITHUB_ENV
+            cat /tmp/cgl_2223.txt >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "CGL_2223=false" >> $GITHUB_ENV
@@ -138,36 +162,44 @@ jobs:
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
-            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+            const browser = await puppeteer.launch({
+              headless: 'new',
+              args: ['--no-sandbox','--disable-setuid-sandbox','--disable-blink-features=AutomationControlled','--window-size=1920,1080']
+            });
             const page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+              window.chrome = { runtime: {} };
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            });
             await page.goto('https://be.synxis.com/?adult=1&arrive=2026-05-23&chain=398&child=0&currency=USD&depart=2026-05-24&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
               waitUntil: 'networkidle0', timeout: 60000
             });
-            try { await page.waitForSelector('[class*=\"room\"], [class*=\"rate\"], [class*=\"avail\"]', { timeout: 15000 }); } catch(e) {}
-            await new Promise(r => setTimeout(r, 8000));
+            await new Promise(r => setTimeout(r, 12000));
             const bodyText = await page.evaluate(() => document.body.innerText);
             await browser.close();
-            console.error('BODY:' + bodyText.substring(0, 3000));
             if (/no rooms available|sold out|no availability|no results/i.test(bodyText)) {
               console.log('NO');
-            } else if (/book now|select|per night|avg\/night|\$\d+/i.test(bodyText)) {
+            } else if (/book now|\$\d+/i.test(bodyText)) {
               console.log('YES');
-              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
-              const roomLines = lines.filter(l => /room|suite|cabin|king|queen|double|standard|deluxe/i.test(l));
-              roomLines.slice(0, 10).forEach(l => console.log('  - ' + l));
-            } else {
-              console.log('UNKNOWN');
-            }
+              const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 5 && l.length < 80);
+              const roomLines = lines.filter(l => /queen|king|double|standard|deluxe|suite|cabin/i.test(l) && !/nav|menu|cart|sign/i.test(l));
+              roomLines.slice(0, 5).forEach(l => console.log('  - ' + l));
+            } else { console.log('NO'); }
           })();
-          " > /tmp/cgl_may2324.txt 2>/tmp/cgl_may2324_debug.txt
-          echo "=== DEBUG ===" && cat /tmp/cgl_may2324_debug.txt
-          echo "=== RESULT ===" && cat /tmp/cgl_may2324.txt
-          RESULT=$(cat /tmp/cgl_may2324.txt)
+          " > /tmp/cgl_2324.txt 2>&1
+          cat /tmp/cgl_2324.txt
+          RESULT=$(grep -m1 "^YES\|^NO" /tmp/cgl_2324.txt)
           echo "Cedar Grove May 23-24: $RESULT"
-          if echo "$RESULT" | grep -q "^YES"; then
+          if [ "$RESULT" = "YES" ]; then
             echo "CGL_2324=true" >> $GITHUB_ENV
             echo "DETAILS_CGL_2324<<EOF" >> $GITHUB_ENV
-            echo "Cedar Grove Lodge May 23-24: $RESULT" >> $GITHUB_ENV
+            echo "Cedar Grove Lodge May 23-24:" >> $GITHUB_ENV
+            cat /tmp/cgl_2324.txt >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "CGL_2324=false" >> $GITHUB_ENV
@@ -175,23 +207,19 @@ jobs:
 
       - name: Log results
         run: |
-          ANY_AVAILABLE=false
           if [ "$JML_2223" = "true" ] || [ "$JML_2324" = "true" ] || [ "$CGL_2223" = "true" ] || [ "$CGL_2324" = "true" ]; then
-            ANY_AVAILABLE=true
-          fi
-          if [ "$ANY_AVAILABLE" = "true" ]; then
             echo "ROOMS AVAILABLE!"
             echo "${DETAILS_JML_2223}${DETAILS_JML_2324}${DETAILS_CGL_2223}${DETAILS_CGL_2324}"
             echo "John Muir Book: https://be.synxis.com/?adult=1&chain=398&child=0&currency=USD&dest=SEKI&hotel=59989&level=hotel&locale=en-US&rooms=1&theme=sequoia2"
             echo "Cedar Grove Book: https://be.synxis.com/?adult=1&chain=398&child=0&currency=USD&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&theme=sequoia2"
           else
-            echo "No availability found for John Muir or Cedar Grove on May 22-23 or May 23-24. Will check again soon."
+            echo "No availability for John Muir or Cedar Grove on May 22-23 or May 23-24. Will check again soon."
           fi
 
       - name: Fail intentionally to trigger GitHub email notification
         if: env.JML_2223 == 'true' || env.JML_2324 == 'true' || env.CGL_2223 == 'true' || env.CGL_2324 == 'true'
         run: |
-          echo "Rooms available at Sequoia lodges! Failing to trigger email."
+          echo "Rooms available at Sequoia lodges!"
           echo "${DETAILS_JML_2223}${DETAILS_JML_2324}${DETAILS_CGL_2223}${DETAILS_CGL_2324}"
           echo "John Muir Book: https://be.synxis.com/?adult=1&chain=398&child=0&currency=USD&dest=SEKI&hotel=59989&level=hotel&locale=en-US&rooms=1&theme=sequoia2"
           echo "Cedar Grove Book: https://be.synxis.com/?adult=1&chain=398&child=0&currency=USD&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&theme=sequoia2"
