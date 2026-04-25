@@ -16,19 +16,53 @@ jobs:
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
-            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-            const page = await browser.newPage();
-            await page.goto('https://be.synxis.com/?adult=1&arrive=2026-08-05&chain=398&child=0&currency=USD&depart=2026-08-06&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
-              waitUntil: 'networkidle0', timeout: 60000
+            const browser = await puppeteer.launch({
+              headless: 'new',
+              args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars',
+                '--window-size=1920,1080'
+              ]
             });
-            try { await page.waitForSelector('[class*=\"room\"], [class*=\"rate\"], [class*=\"avail\"]', { timeout: 15000 }); } catch(e) {}
-            await new Promise(r => setTimeout(r, 8000));
+            const page = await browser.newPage();
+
+            // Spoof a real browser
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setExtraHTTPHeaders({
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+            });
+
+            // Hide automation signals
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+              window.chrome = { runtime: {} };
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            });
+
+            await page.goto('https://be.synxis.com/?adult=1&arrive=2026-08-05&chain=398&child=0&currency=USD&depart=2026-08-06&dest=SEKI&hotel=59988&level=hotel&locale=en-US&rooms=1&start=availresults&theme=sequoia2', {
+              waitUntil: 'networkidle0',
+              timeout: 60000
+            });
+
+            // Wait longer for JS to render
+            await new Promise(r => setTimeout(r, 12000));
+
             const bodyText = await page.evaluate(() => document.body.innerText);
+            const html = await page.content();
+
             await browser.close();
 
             console.error('=== BODY TEXT ===');
             console.error(bodyText.substring(0, 3000));
             console.error('=== END BODY TEXT ===');
+            console.error('=== HTML SNIPPET ===');
+            console.error(html.substring(0, 1000));
+            console.error('=== END HTML SNIPPET ===');
 
             if (/no rooms available|sold out|no availability|no results/i.test(bodyText)) {
               console.log('NO - Sold out or no availability');
@@ -38,7 +72,7 @@ jobs:
               const roomLines = lines.filter(l => /room|suite|cabin|king|queen|double|standard|deluxe/i.test(l));
               roomLines.slice(0, 10).forEach(l => console.log('  - ' + l));
             } else {
-              console.log('UNKNOWN - Could not determine availability, check debug output');
+              console.log('UNKNOWN - Check debug output');
             }
           })();
           " > /tmp/result.txt 2>/tmp/debug.txt
